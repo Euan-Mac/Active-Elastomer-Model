@@ -5,8 +5,8 @@ import os
 from scipy import signal
 import json
 
-input_dir="./cell_12_sim_out" # directory containing the output of the cell_12 simulation
-output_dir="./cell_12_sim_analysis" # directory to save the output of the analysis
+input_dir="./cell_10_sim_out" # directory containing the output of the cell_12 simulation
+output_dir="./cell_10_sim_analysis" # directory to save the output of the analysis
 max_sim_time=300 # maximum simulation time
 equil_time=200 # equilibration time (we usually only want to take data after the system has reached a steady state)
 os.makedirs(output_dir,exist_ok=True) # create the output directory if it does not exist

@@ -607,10 +607,9 @@ class pulse: # class to store information about a cluster of points we is a func
                 return np.nan
         
         def get_shape_tensor(self,time): # get the shape tensor of the cluster at a given time and return the eigenvalues and eigenvectors
-            import fields_methods as fm
             t=self.conver_time_to_ind(time)
             if self.time_valid[t]:
-                vals1,vals2,vects1,vects2=fm.compute_shape_tensor(self.get_coords(time).T)
+                vals1,vals2,vects1,vects2=compute_shape_tensor(self.get_coords(time).T)
                 return vals1,vals2,vects1,vects2
             else:
                 return np.nan,np.nan,np.asarray([np.nan,np.nan]),np.asarray([np.nan,np.nan])
