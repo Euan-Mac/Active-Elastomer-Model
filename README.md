@@ -26,12 +26,15 @@ Create two separate environments:
     - numpy
     - scipy
     - matplotlib (only used for some advanced functions, so you may get away without this)
-  - Processing Output Environment, required packages (available from conda-forge):
-    - numpy
-    - scipy
-    - matplotlib
-    - pyvista
-    - imageio
+  - Processing Output Environment,
+    - required packages (available from conda-forge):
+      - numpy
+      - scipy
+      - matplotlib
+      - pyvista (version0.41.1)
+      - vtk (version 9.2.6)
+      - imageio
+    - This envronment is a pain to get right. Vtk should auto install with pyvista but it doesn't so you need to install them both seperately, also the newer versions of vtk introduce bugs into the analysis functions I wrote. Reccomended easiest order of conda commands to install everything correctly is in env_set_up.bash
 
 ## Mesh Generation
 
