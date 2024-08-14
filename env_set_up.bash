@@ -4,7 +4,10 @@
 conda create -n fenics -c conda-forge fenics numpy scipy matplotlib
 
 # Envronment set-up for analysis of fenics simulations
-conda create -n fenics_analysis -c conda-forge pyvista imageio numpy scipy matplotlib
+conda create -n fenics_analysis -c conda-forge imageio vtk=9.2.6 pyvista=0.41.1 python=3.11
+conda activate fenics_analysis 
+conda install -c condo-forge  numpy scipy matplotlib
+# easier for conda to install things in two steps, so we install the complex stuff first and then the easy stuff, this will probably still take a while to run
 
 # Environment set-up for mesh-making
 conda create -n fenics_mesh -c conda-forge python-gmsh opencv meshio numpy
