@@ -7,8 +7,8 @@ import json
 
 input_dir="./cell_10_sim_out" # directory containing the output of the cell_12 simulation
 output_dir="./cell_10_sim_analysis" # directory to save the output of the analysis
-max_sim_time=300 # maximum simulation time
-equil_time=200 # equilibration time (we usually only want to take data after the system has reached a steady state)
+max_sim_time=500 # maximum simulation time
+equil_time=400 # equilibration time (we usually only want to take data after the system has reached a steady state)
 os.makedirs(output_dir,exist_ok=True) # create the output directory if it does not exist
 
 times,coords,myo_field=fm.load_fenics_field_xdmf(input_dir,"rho_b","rho_b",max_time=max_sim_time) # load the myosin field
