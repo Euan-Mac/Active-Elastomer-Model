@@ -11,6 +11,7 @@ Two example scripts demonstrate how to use the active elastomer model:
   - cell_10_sim.py: Runs a simulation with a real cell geometry and weak mixed boundary conditions (see manuscript).
 
 Two example scripts use the functions in fields_methods.py to analyze the output of the simulations:
+  - analysing_rect_sim_PBCs.py: Analyzes the output of the periodic boundary condition square simulation.
   - analysing_rect_sim.py: Analyzes the output of the non-periodic boundary condition square simulation.
   - analysing_cell_sim.py: Analyzes the output of the cellular data simulation.
 
