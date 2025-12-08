@@ -1,37 +1,21 @@
-import fields_methods as fm # all the helper functions for analysing the simulation output\
+import fields_methods as fm # all the helper functions for analysing the simulation output
+import fields_methods_im as fmi # helper functions for analysing field in a more image based way
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 from scipy import signal
 import json
 
-input_dir="./cell_10_sim_out" # directory containing the output of the cell_12 simulation
-output_dir="./cell_10_sim_analysis" # directory to save the output of the analysis
-max_sim_time=500 # maximum simulation time
-equil_time=400 # equilibration time (we usually only want to take data after the system has reached a steady state)
+input_dir="./rect_sim_out" # directory containing the output of the cell_12 simulation
+output_dir="./rect_sim_analysis" # directory to save the output of the analysis
+max_sim_time=300 # maximum simulation time
+equil_time=200 # equilibration time (we usually only want to take data after the system has reached a steady state)
 os.makedirs(output_dir,exist_ok=True) # create the output directory if it does not exist
+
 check_fields_dir="./check_fields" # directory to save the check files for the fields - checks fields have been loaded correctly
-os.makedirs(check_fields_dir,exist_ok=True) # create the check fields directory if it does not exist
-shape_info_file =os.path.join(input_dir,"shape_info_cell.json") # file containing information about the cell shape
+os.makedirs(check_fields_dir,exist_ok=True)
 
-# check if we need to rotate
-if not os.path.exists(shape_info_file):
-    print("No shape info file found, assuming no rotation needed")
-    rot_angle = 0
-else:
-    # load_shape info
-    with open(shape_info_file, 'r') as f:
-        shape_dict = json.load(f)
 
-    i_major = np.argmax(shape_dict["eigenvalues"]) # index of major axis
-    eigs = np.array(shape_dict["eigenvectors"]) # eigenvectors of shape tensor
-    v1 = eigs[:, i_major]
-    if v1[1]<0: # make sure long axis points upwards in y
-        v1=-v1
-    shape_angle = np.arctan2(v1[1],v1[0]) # angle of long axis
-    centroid = shape_dict["centroid"] # centroid of shape
-    rot_angle = -shape_angle + np.pi/2 # rotation angle to make long axis vertical
-    
 # Load in the fields
     
 late_times, late_myo, mesh_ob  = fm.load_point_data_timeseries(os.path.join(input_dir,"rho_b.xdmf"), equil_time, "rho_b")
@@ -112,8 +96,10 @@ plt.close(fig)
 pulse_info_dir = os.path.join(output_dir, "pulse_info")
 os.makedirs(pulse_info_dir, exist_ok=True)
 
-field_masked, Xs, Ys, rect_mask = fmi.interpolate_to_rect(late_myo, late_times, mesh_ob, do_print=True, N=300) # interpolate the myosin field to a rectangular grid
-fmi.plot_interpolated_data(Xs, Ys, field_masked, rect_mask, os.path.join(output_dir, "interpolated_field.png")) # plot the interpolated field to check it looks ok
+# interpolate to rectangular grid with PBCs - different from the usual interpolation as we have periodic boundary conditions
+# this means pulses passing over one edge of the rectangle reappear on the other side and we need to track them correctly
+field_masked, Xs, Ys = fmi.interpolate_to_rect_PBC(late_myo, late_times, mesh_ob, do_print=True, N=500) # interpolate the myosin field onto a rectangular grid with periodic boundary conditions
+fmi.plot_interpolated_data(Xs, Ys, field_masked, np.ones_like(field_masked, dtype=bool), os.path.join(output_dir, "interpolated_field.png"), offset=20)
 
 # threshold data
 thresh=1.0 # threshold for CR brightness criterion in terms of standard deviations above the mean
@@ -125,7 +111,7 @@ CR_masks  = field_masked > thresh # create binary masks of where the myosin fiel
 labels, labels_filtered = fmi.run_CC_analysis(CR_masks, smallest_alowed_pix=1) # find connected components
 
 # track ccs to find pulses
-pulses_list = fmi.track_pulses(labels_filtered, Xs, Ys, late_times, 1.0) # track the connected components to find pulses
+pulses_list = fmi.track_pulses(labels_filtered, Xs, Ys, late_times, 1.0, allow_uneven_grids=True) # track the connected components to find pulses, allowing for uneven grids due to PBCs
 my_PS = fmi.pulse_set(late_times, Xs, Ys, field_masked, pulses_list) # create a pulse set object - this has lots of useful methods for analysing the pulses
 
 pix_counts = my_PS.get_pixel_distribution() # get the distribution of number of pixels in each pulse

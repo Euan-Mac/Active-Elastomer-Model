@@ -1,39 +1,45 @@
-import fields_methods as fm # all the helper functions for analysing the simulation output\
+import fields_methods as fm # all the helper functions for analysing the simulation output
+import fields_methods_im as fmi # helper functions for analysing field in a more image based way
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 from scipy import signal
 import json
 
-input_dir="./rect_sim_out" # directory containing the output of the cell_12 simulation
+input_dir="./rect_sim_out_not_PBC" # directory containing the output of the rectangular simulation without periodic boundary conditions
 output_dir="./rect_sim_analysis" # directory to save the output of the analysis
 max_sim_time=300 # maximum simulation time
 equil_time=200 # equilibration time (we usually only want to take data after the system has reached a steady state)
 os.makedirs(output_dir,exist_ok=True) # create the output directory if it does not exist
 
-times,coords,myo_field=fm.load_fenics_field_xdmf(input_dir,"rho_b","rho_b",max_time=max_sim_time) # load the myosin field
-late_times=times[times>equil_time] # get the times after the equilibration time
-late_myo=myo_field[times>equil_time,:] # get the myosin field after the equilibration time
-
-times,coords,vel_field=fm.load_fenics_field_xdmf(input_dir,"velocity","velocity",max_time=max_sim_time) # load the velocity field
-late_vel=vel_field[times>equil_time,:,:] # get the velocity field after the equilibration time
-v_mag=np.sqrt(late_vel[:,0,:]**2+late_vel[:,1,:]**2) # calculate the magnitude of the velocity field as its easier to work with scalar fields
-v_phase=np.arctan2(late_vel[:,1,:],late_vel[:,0,:]) 
-
-times,coords,div_v_field=fm.load_fenics_field_xdmf(input_dir,"v_div","div_v",max_time=max_sim_time) # load the divergence of the velocity field
-late_div_v=div_v_field[times>equil_time,:] # get the divergence of the velocity field after the equilibration time
+check_fields_dir="./check_fields" # directory to save the check files for the fields - checks fields have been loaded correctly
+os.makedirs(check_fields_dir,exist_ok=True)
 
 
-# Plot spatial average of the fields as a function of time
-def _spatial_av(sig):
-    return np.mean(sig,axis=1),np.std(sig,axis=1)/np.sqrt(sig.shape[1])
-
-av_myo,er_myo=_spatial_av(late_myo) # calculate the spatially averaged myosin field
-av_v_mag,er_v_mag=_spatial_av(v_mag) # calculate the spatially averaged velocity magnitude
-av_v_phase,er_v_phase=_spatial_av(v_phase) # calculate the spatially averaged velocity phase
-av_div_v,er_div_v=_spatial_av(late_div_v) # calculate the spatially averaged divergence of the velocity field
+# Load in the fields
+    
+late_times, late_myo, mesh_ob  = fm.load_point_data_timeseries(os.path.join(input_dir,"rho_b.xdmf"), equil_time, "rho_b")
+late_myo_series = fm.FenicsTimeSeries(os.path.join(input_dir,"rho_b.xdmf"), "rho_b", late_times, vector=False, checkfile=os.path.join(check_fields_dir,"check_rho_b.xdmf"))
 
 
+late_times, late_vel, _  = fm.load_point_data_timeseries(os.path.join(input_dir,"velocity.xdmf"), equil_time, "velocity")
+late_vel_series = fm.FenicsTimeSeries(os.path.join(input_dir,"velocity.xdmf"), "velocity", late_times, vector=True)
+mag_late_vel=late_vel_series.magnitude() # calculate the magnitude of the velocity field
+phase_late_vel=late_vel_series.phase() # calculate the phase of the velocity field
+
+late_times, late_div_v, _ = fm.load_point_data_timeseries(os.path.join(input_dir,"v_div.xdmf"), equil_time, "div_v")
+late_div_v_series = fm.FenicsTimeSeries(os.path.join(input_dir,"v_div.xdmf"), "div_v", late_times, vector=False, checkfile=os.path.join(check_fields_dir,"check_div_v.xdmf"))
+
+av_myo = late_myo_series.spatial_mean() # calculate the spatially averaged myosin field
+er_myo = late_myo_series.spatial_std() # calculate the standard deviation of the myosin field
+av_div_v = late_div_v_series.spatial_mean() # calculate the spatially averaged divergence of the velocity field
+er_div_v = late_div_v_series.spatial_std() # calculate the standard deviation of the divergence of the velocity field
+av_v_mag = mag_late_vel.spatial_mean() # calculate the spatially averaged velocity magnitude
+er_v_mag = mag_late_vel.spatial_std() # calculate the standard deviation of the velocity magnitude
+av_v_phase = phase_late_vel.spatial_mean() # calculate the spatially averaged velocity phase
+er_v_phase = phase_late_vel.spatial_std() # calculate the standard deviation of the velocity phase
+    
+    
 # Basic plotting in time
 def plot_time_series(ax,times,vals,errors,title,xlabel,ylabel,xlim=None,ylim=None):
     ax.errorbar(times,vals,yerr=errors,label=title,
@@ -60,18 +66,10 @@ plt.close(fig)
 
 
 # Same with power spectra  
-
-dt=late_times[1]-late_times[0] # calculate the time step
-fs=1/dt # calculate the sampling frequency
-
-def av_spectra(sig):
-    freqs,pxx=signal.periodogram(sig,fs=fs,axis=0,scaling="spectrum",detrend="constant") # calculate the power spectrum
-    return freqs,np.mean(pxx,axis=1),np.std(pxx,axis=1)/np.sqrt(pxx.shape[1])
-
-freqs,av_myo_p,er_myo_p=av_spectra(late_myo) # calculate the power spectrum of the myosin field
-_,av_v_mag_p,er_v_mag_p=av_spectra(v_mag) # calculate the power spectrum of the velocity magnitude
-_,av_v_phase_p,er_v_phase_p=av_spectra(v_phase) # calculate the power spectrum of the velocity phase
-_,av_div_v_p,er_div_v_p=av_spectra(late_div_v) # calculate the power spectrum of the divergence of the velocity field
+freqs, av_myo_p, er_myo_p, _, _ = fm.fencis_periodogram_time(late_myo_series) # calculate the power spectrum of the myosin field averaged over space
+_, av_v_mag_p, er_v_mag_p, _, _ = fm.fencis_periodogram_time(mag_late_vel) # calculate the power spectrum of the velocity magnitude averaged over space
+_, av_v_phase_p, er_v_phase_p, _, _ = fm.fencis_periodogram_time(phase_late_vel) # calculate the power spectrum of the velocity phase averaged over space
+_, av_div_v_p, er_div_v_p, _, _ = fm.fencis_periodogram_time(late_div_v_series) # calculate the power spectrum of the divergence of the velocity field averaged
 
 fig,ax=plt.subplots(2,2,figsize=(10,10))
 plot_time_series(ax[0,0],freqs,av_myo_p,er_myo_p,"Myosin field","Frequency","Power spectrum",xlim=(0,2))
@@ -82,212 +80,158 @@ plt.tight_layout()
 plt.savefig(os.path.join(output_dir,"spectra.pdf"),format="pdf",transparent=True,bbox_inches="tight",pad_inches=0.01)
 plt.close(fig)
 
-# Compute time correlation functions using bootstrap to average over multiple spatial points
-corls_mm,corls_std_er_mm,dts=fm.bootstrap_time_correl_FT(late_myo,late_myo,np.arange(0,late_div_v.shape[0])*times[1],N_boot=100) # calculate the time autocorrelation function of the myosin field
-corls_m_div,corls_std_er_m_div,dts=fm.bootstrap_time_correl_FT(late_myo,late_div_v,np.arange(0,late_div_v.shape[0])*times[1],N_boot=100) # calculate the time cross-correlation function of the myosin field and the divergence of the velocity field
-
+dts, corls_mm, corl_std_mm, _ = fm.fenics_correlate_time_FT(late_myo_series, late_myo_series) # calculate the time autocorrelation function of the myosin field
+dts, corls_m_div, corls_std_er_m_div, _ = fm.fenics_correlate_time_FT(late_myo_series, late_div_v_series) # calculate the time cross-correlation function of the myosin field and the divergence of the velocity field
+    
 fig,ax=plt.subplots(1,2,figsize=(10,5))
-plot_time_series(ax[0],dts,corls_mm,corls_std_er_mm,"Myosin field","Time","Correlation",xlim=(-10,10))
+plot_time_series(ax[0],dts,corls_mm,corl_std_mm,"Myosin field","Time","Correlation",xlim=(-10,10))
 plot_time_series(ax[1],dts,corls_m_div,corls_std_er_m_div,"Myosin field and divergence of velocity field","Time","Correlation",xlim=(-10,10))
 plt.tight_layout()
 plt.savefig(os.path.join(output_dir,"correlations_time.pdf"),format="pdf",transparent=True,bbox_inches="tight",pad_inches=0.01)
 plt.close(fig)
 
 
-# spatial correlation functions (note this can give weird values are very large distances).
-# Since we have periodic boundaries so max distance is half the domain size, we need to define a new function here rather than using the one in fields_methods.
 
-# This function calculates the spatial correlation function of two fields with periodic boundary conditions.
-# Takes two fields and the spatial coordinates, the size of the domain.
-# Field should be defined on a meshgrid of coordinates.
-def correlation_func_PBC(xs,ys,field1,field2,Lx,Ly,do_print=True):
-    from scipy.signal import correlate,correlation_lags
-    xs=np.unique(xs)
-    ys=np.unique(ys)
+# # pulse tracking
+pulse_info_dir = os.path.join(output_dir, "pulse_info")
+os.makedirs(pulse_info_dir, exist_ok=True)
 
-    # Compute the correlation lags, making sure to take into account periodic boundary conditions
-    dxs=correlation_lags(xs.shape[0],xs.shape[0],mode="full")*xs[1]
-    dys=correlation_lags(ys.shape[0],ys.shape[0],mode="full")*ys[1]
-    Dxs,Dys=np.meshgrid(dxs,dys,indexing="ij")
-    dxs=dxs-np.round(dxs/Lx)*Lx
-    dys=dys-np.round(dys/Ly)*Ly
+field_masked, Xs, Ys, rect_mask = fmi.interpolate_to_rect(late_myo, late_times, mesh_ob, do_print=True, N=300) # interpolate the myosin field to a rectangular grid
+fmi.plot_interpolated_data(Xs, Ys, field_masked, rect_mask, os.path.join(output_dir, "interpolated_field.png")) # plot the interpolated field to check it looks ok
 
-    # Compute the normalised fields
-    m1=np.nanmean(field1,axis=(1,2)).reshape(-1,1,1)
-    m2=np.nanmean(field2,axis=(1,2)).reshape(-1,1,1)
-    norm1=np.nanstd(field1,axis=(1,2)).reshape(-1,1,1)
-    norm2=np.nanstd(field2,axis=(1,2)).reshape(-1,1,1)
-    vals1=(field1-m1)/norm1
-    vals2=(field2-m2)/norm2
+# threshold data
+thresh=1.0 # threshold for CR brightness criterion in terms of standard deviations above the mean
+mean_myo = late_myo_series.space_time_mean() # calculate the mean myosin field over space and time
+std_myo = late_myo_series.space_time_std() # calculate the standard deviation of the myosin field over space and time
+thresh = mean_myo + thresh * std_myo # set the threshold value
+print(f"Using threshold value of {thresh:.2f} for pulse detection")
+CR_masks  = field_masked > thresh # create binary masks of where the myosin field is above the threshold
+labels, labels_filtered = fmi.run_CC_analysis(CR_masks, smallest_alowed_pix=1) # find connected components
 
-    # Compute the correlation function
-    corl0=correlate(vals1[0,:,:],vals2[0,:,:],mode="full",method="fft")
-    all_corls=np.zeros((field1.shape[0],corl0.shape[0],corl0.shape[1]))
-    for t,(v1,v2) in enumerate(zip(vals1,vals2)):
-        all_corls[t,:,:]=correlate(v1,v2,mode="full",method="fft")
-        if do_print:
-            print(f"Completed {100*t/field1.shape[0]:.2f}% of correlations",end="\r")
-    
-    # Compute the normalised correlation function
-    counts=correlate(np.ones_like(vals1[0,:,:]),np.ones_like(vals2[0,:,:]),mode="full",method="fft")
-    mean_corls=np.mean(all_corls,axis=0)
-    norm_corls=mean_corls/counts
-    
-    # Mask out the values that are not valid. because of the periodic boundary conditions
-    mask=(np.abs(Dxs)>0.5*Lx)|(np.abs(Dys)>0.5*Ly)
-    corls_out=np.copy(norm_corls)
-    Dxs_out=np.copy(Dxs)
-    Dys_out=np.copy(Dys)
-    corls_out[mask]=np.nan
+# track ccs to find pulses
+pulses_list = fmi.track_pulses(labels_filtered, Xs, Ys, late_times, 1.0) # track the connected components to find pulses
+my_PS = fmi.pulse_set(late_times, Xs, Ys, field_masked, pulses_list) # create a pulse set object - this has lots of useful methods for analysing the pulses
 
-    return corls_out,Dxs_out,Dys_out
+pix_counts = my_PS.get_pixel_distribution() # get the distribution of number of pixels in each pulse
+# warn if any pulses have very few pixels and thus may be false positives
+if np.any(pix_counts < 4):
+    print(f"Warning: Some ({100*np.sum(pix_counts<4)/len(pix_counts):.2f}% of all) pulses have very few pixels (<4)")
 
-myo_rect,Xs,Ys=fm.interpolate_to_rect(late_myo,coords) # put myosin field on a rectangular grid
-corls_mm,Dxs,Dys=correlation_func_PBC(Xs,Ys,myo_rect,myo_rect,50,50) # calculate the spatial correlation function of the myosin field
+# save pulse tracks animation
+my_PS.prune_false_positives(min_pix = 5) # remove pulses with fewer than 5 pixels to reduce false positives
+my_PS.animate_pulse_set(os.path.join(pulse_info_dir, "pulse_tracks.mp4")) # save an animation of the pulse tracks
 
+# find key pulse statistics and save
+N_cr = my_PS.get_avg_num_pulses() # get the average number of pulses present at any one time
+feret_mean = my_PS.get_avg_feret() # get the mean feret diameters of the pulses
+all_areas = my_PS.get_all_areas()
+mean_area = np.nanmean(all_areas) # calculate the mean area of pulses
 
-fig,ax=plt.subplots(1,1,figsize=(5,5))
-ax.pcolormesh(Dxs,Dys,corls_mm,cmap="viridis",vmin=-1,vmax=1)
-ax.set_aspect("equal")
-ax.set_xlabel("x")
-ax.set_ylabel("y")
-ax.set_title("Correlation of myosin")
-fig.savefig(os.path.join(output_dir,"correlation_spatial_2d.pdf"),dpi=400,transparent=True,pad_inches=0.01,bbox_inches='tight')
-ax.set_xlim(np.min(Dxs)/2,np.max(Dxs)/2)
-ax.set_ylim(np.min(Dys)/2,np.max(Dys)/2)
-plt.close(fig)
+all_lifetimes = my_PS.get_all_lifetimes() # get the lifetimes of all pulses
+mean_lifetime = np.nanmean(all_lifetimes) # calculate the mean lifetime of pulses
+std_lifetime = np.nanstd(all_lifetimes) # calculate the standard deviation of the lifetimes
+max_N, max_N_frame, max_N_time = my_PS.get_max_simultaneous_pulses() # get the maximum number of simultaneous pulses and when this occurs
+x_displacemnts, y_displacements = my_PS.get_all_displacements() # get the displacements directions of all pulses
 
-# Interesting feature not really discussed in the paper is the the following plot
-# We compared the direction of the velocity field with the magnitude of the velocity field
-# This is done accross all spatial points and all (late) times.
+# save out pulse statistics
+areas_file = os.path.join(pulse_info_dir, "pulse_areas.txt") 
+np.savetxt(areas_file, all_areas)
 
-# We see a strong correlation, due to geometry of the cell
-fig,ax=plt.subplots(1,1,figsize=(5,5))
-ax.plot(v_phase.flatten(),v_mag.flatten(),"o",ms=1)
-ax.set_xlabel("Velocity phase")
-ax.set_ylabel("Velocity magnitude")
+displacements_file = os.path.join(pulse_info_dir, "pulse_displacements.txt")
+np.savetxt(displacements_file, np.vstack((x_displacemnts, y_displacements)).T)
+
+lifetimes_file = os.path.join(pulse_info_dir, "pulse_lifetimes.txt")
+np.savetxt(lifetimes_file, all_lifetimes)
+
+init_sites, init_times = my_PS.get_init_sites(growth_check=True, dist_check=1.0) # get the initiation sites of all pulses
+init_site_counts, mean_coords = fmi.initiation_site_analysis(init_sites, rect_mask, Xs, Ys,  rotation_angle=rot_angle) # analyse the initiation sites to find their spatial distribution
+# we rotate the coodinates to align with the rectangle axes by rot angle
+
+# save out initiation site data
+np.savetxt(os.path.join(pulse_info_dir, "initiation_site_counts.txt"), init_site_counts)
+my_PS.animate_initiation_sites(os.path.join(pulse_info_dir, "initiation_sites.mp4"), fps=5, init_sites=init_sites, init_times=init_times)
+np.savetxt(os.path.join(pulse_info_dir, "initiation_site_counts.txt"), init_site_counts)
+
+# save initiation site plots
+fig,axs=plt.subplots(1,2,figsize=(5,2.5))
+ax=axs[0]
+ax.pcolor(Xs, Ys, rect_mask, cmap='Greys', shading='auto', alpha=0.3)
+c=ax.scatter(init_sites[:,0], init_sites[:,1], s=5, alpha=0.5, c=init_times, cmap='plasma')
+cbar=fig.colorbar(c,ax=ax)
+cbar.set_label("Initiation Time",fontsize=8)
+ax.set_title("Initiation Sites Overlayed on Cell Mask",fontsize=8)
+ax.set_xlabel("X Position",fontsize=8)
+ax.set_ylabel("Y Position",fontsize=8)
+ax.set_aspect('equal')
+
+ax=axs[1]
+c=ax.matshow(init_site_counts,cmap='inferno')
+ax.set_title("Initiation Sites",fontsize=8)
+cbar=fig.colorbar(c,ax=ax)
+cbar.set_label("Number of Counts",fontsize=8)
+#turn off axis
+ax.axis('off')
 plt.tight_layout()
-plt.savefig(os.path.join(output_dir,"velocity_phase_vs_magnitude.png"),format="png",transparent=True,bbox_inches="tight",pad_inches=0.01, dpi=300)
+plt.savefig(os.path.join(pulse_info_dir,"init_sites.pdf"),transparent=True,pad_inches=0.01,bbox_inches='tight')
 plt.close(fig)
 
 
-# Now let's locate the peaks in spatially averaged myosin field
-mean_myo=np.mean(late_myo,axis=1) 
-top_myos=np.percentile(mean_myo,80) # look for when the myosin field is in the top 20% of values
-bottom_myos=np.percentile(mean_myo,20) # look for when the myosin field is in the bottom 20% of values
-myo_peaks,_=signal.find_peaks(mean_myo) # find the peaks in the spatially averaged myosin field
-above_mean_peaks=myo_peaks[mean_myo[myo_peaks]>top_myos] # only keep the peaks that are in the top 20% of values
-myo_troughs,_=signal.find_peaks(-mean_myo) # find the troughs in the spatially averaged myosin field
-above_mean_troughs=myo_troughs[mean_myo[myo_troughs]<bottom_myos] # only keep the troughs that are in the bottom 20% of values
+# peak and trough analysis
+mean_myo = late_myo_series.spatial_mean() # calculate the spatially averaged myosin field -i.e. a time series of mean myosin
+top_myos = np.percentile(mean_myo, 80) # define thresholds for peaks and troughs
+bottom_myos = np.percentile(mean_myo, 20) # define thresholds for peaks and troughs
+myo_peaks,_=signal.find_peaks(mean_myo) # find peaks in the mean myosin time series
+above_mean_peaks=myo_peaks[mean_myo[myo_peaks]>top_myos] # only keep peaks above the threshold
+myo_troughs,_=signal.find_peaks(-mean_myo) # find troughs in the mean myosin time series
+above_mean_troughs=myo_troughs[mean_myo[myo_troughs]<bottom_myos] # only keep troughs below the threshold
 
-mean_peak_val=np.mean(mean_myo[above_mean_peaks]) # calculate the mean value of the myosin field at the peaks
-mean_trough_val=np.mean(mean_myo[above_mean_troughs]) # calculate the mean value of the myosin field at the troughs
-std_er_peak_val=np.std(mean_myo[above_mean_peaks])/np.sqrt(len(above_mean_peaks)) # calculate the standard error of the mean of the myosin field at the peaks
-std_er_trough_val=np.std(mean_myo[above_mean_troughs])/np.sqrt(len(above_mean_troughs)) # calculate the standard error of the mean of the myosin field at the troughs
+mean_peak_val=np.mean(mean_myo[above_mean_peaks]) # calculate mean value of peaks
+mean_trough_val=np.mean(mean_myo[above_mean_troughs]) # calculate mean value of troughs
+std_peak_val=np.std(mean_myo[above_mean_peaks]) # calculate standard deviation of peaks
+std_trough_val=np.std(mean_myo[above_mean_troughs]) # calculate standard deviation of troughs
+std_er_peak_val=std_peak_val/np.sqrt(len(above_mean_peaks)) # calculate standard error of peaks
+std_er_trough_val=std_trough_val/np.sqrt(len(above_mean_troughs)) # calculate standard error of troughs
 
-max_myos=np.max(late_myo,axis=1) # get the maximum myosin field at each time
-min_myos=np.min(late_myo,axis=1) # get the minimum myosin field at each time
-
-mean_max_myos=np.mean(max_myos) # calculate the mean maximum myosin field 
-mean_min_myos=np.mean(min_myos) # calculate the mean minimum myosin field
-
-std_er_max_myos=np.std(max_myos)/np.sqrt(len(max_myos)) # calculate the standard error of the mean of the maximum myosin field
-std_er_min_myos=np.std(min_myos)/np.sqrt(len(min_myos)) # calculate the standard error of the mean of the minimum myosin field
-
-# plot myo signal and peaks
-fig,ax=plt.subplots(1,1,figsize=(5,5))
-ax.plot(late_times,mean_myo,label="Myosin field",marker='None',linestyle='-',color='black',linewidth=1)
-ax.plot(late_times[above_mean_peaks],mean_myo[above_mean_peaks],"o",label="Peaks",color='red')
-ax.plot(late_times[above_mean_troughs],mean_myo[above_mean_troughs],"o",label="Troughs",color='blue')
+# save out myosin peaks plot
+fig,ax=plt.subplots(1,1,figsize=(5,5),dpi=400)
+ax.plot(late_times,mean_myo)
+ax.scatter(late_times[above_mean_peaks],mean_myo[above_mean_peaks],color='r',s=10)
+ax.scatter(late_times[above_mean_troughs],mean_myo[above_mean_troughs],color='b',s=10)
+ax.legend([r"$\rho_b$","Peaks","Troughs"])
 ax.set_xlabel("Time")
-ax.set_ylabel("Myosin field")
-ax.legend()
-plt.tight_layout()
-plt.savefig(os.path.join(output_dir,"myosin_field_peaks.pdf"),format="pdf",transparent=True,bbox_inches="tight",pad_inches=0.01)
+ax.set_ylabel(r"$\rho_b$")
+ax.set_title("Myosin Peaks")
+fig.savefig(os.path.join(pulse_info_dir,"myo_peaks.pdf"),transparent=True,pad_inches=0.01,bbox_inches='tight')
 
+num_pulses_in_time = my_PS.get_num_pulses_time_dep() # get the number of pulses present at each time point
+num_pulses_at_peaks=num_pulses_in_time[above_mean_peaks] # get the number of pulses present at each peak time
+mean_peak_num_pulses=np.mean(num_pulses_at_peaks) # calculate the mean number of pulses present at peaks
 
-# Now let's try and locate the contracted regions
-# We will do this by looking for "bright" regions in the myosin field
-
-connecs=fm.get_msh_conec(os.path.join(input_dir,"rho_b.xdmf"),PBC=True) # get the connectivity of the mesh, note we are using periodic boundary conditions
-bound_points=fm.get_msh_boundary_points(os.path.join(input_dir,"rho_b.xdmf")) # get the boundary points of the mesh
-# look at late myosin field, look for at least 2 points when the myosin field is 1.5 standard deviations above the mean
-clusters=fm.cluster_time_fenics_dat(late_myo,connecs,num_std=1.5,min_cluster_size=2,pulses="high") # cluster the myosin field
-
-# Connect up clusters we found in time 
-all_pulses=fm.track_pulses(clusters,coords,late_times,dist_tol=2)
-my_PS=fm.pulse_set(late_times,coords,late_myo,all_pulses)
-
-# Now we can get some information about the pulses
-num_pulses_in_time=np.array(my_PS.get_num_pulses_time_dep()) # get the number of pulses at each time
-vels_in_time=my_PS.get_pulse_averaged_velocities() # get the velcoity averaged over all pulses at each time
-vel_mat=my_PS.get_vel_matrix() # compute the velocity matrix, ie velcoity of each pulse at each time
-vel_mags=np.sqrt(vel_mat[:,:,0]**2+vel_mat[:,:,1]**2).flatten() # compute the magnitude of the velocity of each pulse at each time
-vel_ang=np.arctan2(vel_mat[:,:,1],vel_mat[:,:,0]).flatten() # compute the angle of the velocity of each pulse at each time
-AR=my_PS.get_pulse_averaged_aspect_ratios()  # get the feret aspect ratio averaged over all pulses at each time
-num_pulses_at_peaks=num_pulses_in_time[above_mean_peaks] # get the number of CRs present at the peaks
-
-# Average quantities over time
-av_num_pulses=np.mean(num_pulses_in_time)
-max_num_pulses=float(np.max(num_pulses_in_time))
-mean_peak_num_pulses=np.mean(num_pulses_at_peaks)
-av_vel=np.nanmean(vel_mags)
-AR=float(np.nanmean(AR))
-
-
-# Get basic information about the initiation sites of the pulses
-init_sites=my_PS.get_all_init_sites() # get the initiation sites of the pulses
-init_site_dict=fm.initation_site_analysis(init_sites[:,0:2],bound_points[:,0:2],do_rotate=False) # analyse the locations of the initiation sites, don't rotate the cell
-init_site_mat=init_site_dict["pos_count_mat"] # get the matrix of the number of pulses initiated at each segment (this is shown in fig 4 of the paper)
-nn_ar=init_site_dict["pulse_neighbours"] # get the list of nums of nearby sites for each site
-bound_points_rot=init_site_dict["bounds_rot"] # since we didn't rotate the cell the rotated boundary points are the same as the original ones
-init_sites_rot=init_site_dict["sites_rot"] 
-
-# Two different ways to plot the initiation sites
-fig,ax=plt.subplots(1,2,figsize=(10,5))
-ax[0].scatter(bound_points_rot[:,0],bound_points_rot[:,1],c='black',s=10,marker='o')
-c=ax[0].scatter(init_sites_rot[:,0],init_sites_rot[:,1],c=nn_ar,cmap='inferno',s=10,marker='o')
-ax[0].set_xlabel("x")
-ax[0].set_ylabel("y")
-ax[0].set_aspect('equal')
-cb1=fig.colorbar(c,ax=ax[0])
-cb1.set_label("Number of nearby initiation sites")
-ax[0].set_title(" All initiation sites")
-c2=ax[1].imshow(init_site_mat,cmap='inferno',origin='lower')
-ax[1].set_title("Segmented initiation sites")
-cb2=fig.colorbar(c2,ax=ax[1])
-cb2.set_label("Number of pulses in segment")
-# don't show x and y axis
-ax[1].set_xticks([])
-ax[1].set_yticks([])
-plt.tight_layout()
-plt.savefig(os.path.join(output_dir,"initiation_sites.pdf"),format="pdf",transparent=True,bbox_inches="tight",pad_inches=0.01)
-plt.close(fig)
-
-
-# Animate some of the data to give an idea of the dynmaics
-# Note that since the shape is non-convex python isn't great at plotting the mesh so it is better to use paraview
-
-fm.animate_tripfield(late_times,coords,late_myo,os.path.join(output_dir,"myosin_field.mp4"),title="Myosin Field")
-fm.animate_field_and_pulses(late_times,coords,late_myo,all_pulses,os.path.join(output_dir,"myosin_field_pulses"))
-
-# Save some of these quatities to an output file
-pulse_info_dict={"av_num_pulses":av_num_pulses,
-                 "std_err_num_pulses":np.std(num_pulses_in_time)/np.sqrt(len(num_pulses_in_time)),
-                 "max_num_pulses":max_num_pulses,
-                 "peak_num_pulses":mean_peak_num_pulses,
-                "av_vel":av_vel,
-                "AR":AR,
-                "mean_peak_val":float(mean_peak_val),
-                "std_er_peak_val":float(std_er_peak_val),
-                "mean_trough_val":float(mean_trough_val),
-                "std_er_trough_val":float(std_er_trough_val),
-                "mean_max_myos":float(mean_max_myos),
-                "std_er_max_myos":float(std_er_max_myos),
-                "mean_min_myos":float(mean_min_myos),
-                "std_er_min_myos":float(std_er_min_myos),
+# save pulse statistics
+pulse_info_dir = os.path.join(output_dir, "pulse_info")
+pulse_info_dict={"av_num_pulses":float(N_cr),
+                    "std_num_pulses":float(np.std(num_pulses_in_time)),
+                    "std_err_num_pulses":float(np.std(num_pulses_in_time)/np.sqrt(len(num_pulses_in_time))),
+                    "long_ax": float(feret_mean[1]),
+                    "short_ax": float(feret_mean[0]),
+                    "area": float(mean_area),
+                    "max_num_pulses": int(max_N),
+                    "max_num_pulses_frame": int(max_N_frame),
+                    "max_num_pulses_time": float(max_N_time),
+                    "peak_num_pulses": float(mean_peak_num_pulses),
+                    "mean_lifetime": float(mean_lifetime),
+                    "std_lifetime": float(std_lifetime)
                 }
 
-pulse_file=os.path.join(output_dir,"summary_info.json")
+os.makedirs(pulse_info_dir, exist_ok=True)
+pulse_file=os.path.join(pulse_info_dir,"pulse_info.json")
 with open(pulse_file,'w') as f:
     json.dump(pulse_info_dict,f)
+
+# save num pulses at peaks
+np.savetxt(os.path.join(pulse_info_dir,"num_pulses_at_peaks.txt"), num_pulses_at_peaks)
+
+
+# create animation of the myosin field
+print("Animating myosin field")
+fm.animate_tripfield_mesh(late_times,mesh_ob,late_myo,output_dir=os.path.join(output_dir,"myosin_field.mp4"),title="Myosin Field")
