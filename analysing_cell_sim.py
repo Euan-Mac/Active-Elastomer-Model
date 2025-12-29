@@ -41,7 +41,7 @@ late_myo_series = fm.FenicsTimeSeries(os.path.join(input_dir,"rho_b.xdmf"), "rho
 late_times, late_vel, _  = fm.load_point_data_timeseries(os.path.join(input_dir,"velocity.xdmf"), equil_time, "velocity")
 late_vel_series = fm.FenicsTimeSeries(os.path.join(input_dir,"velocity.xdmf"), "velocity", late_times, vector=True)
 mag_late_vel=late_vel_series.magnitude() # calculate the magnitude of the velocity field
-phase_late_vel=late_vel_series.phase() # calculate the phase of the velocity field
+phase_late_vel=late_vel_series.angle() # calculate the phase of the velocity field
 
 late_times, late_div_v, _ = fm.load_point_data_timeseries(os.path.join(input_dir,"v_div.xdmf"), equil_time, "div_v")
 late_div_v_series = fm.FenicsTimeSeries(os.path.join(input_dir,"v_div.xdmf"), "div_v", late_times, vector=False, checkfile=os.path.join(check_fields_dir,"check_div_v.xdmf"))
